@@ -7,22 +7,33 @@ const admin = require('firebase-admin');
 let db = null;
 
 try {
-  console.log('Environment check:', {
+  const rawEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
+  console.log('Env check:', {
     hasBotToken: !!process.env.BOT_TOKEN,
     hasAppUrl: !!process.env.APP_URL,
-    hasServiceAccount: !!process.env.FIREBASE_SERVICE_ACCOUNT,
-    serviceAccountLength: process.env.FIREBASE_SERVICE_ACCOUNT?.length || 0
+    hasServiceAccount: !!rawEnv,
+    serviceAccountLength: rawEnv?.length || 0,
   });
 
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  if (rawEnv) {
+    // Fix escaped newlines that Render sometimes introduces
+    let jsonStr = rawEnv;
+    try {
+      // Try direct parse first
+      JSON.parse(jsonStr);
+    } catch (_) {
+      // Replace escaped newlines in private_key field
+      jsonStr = rawEnv.replace(/\\n/g, '\n');
+    }
+
+    const serviceAccount = JSON.parse(jsonStr);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
     db = admin.firestore();
-    console.log("✅ Firebase bog'landi! (v3)");
+    console.log("✅ Firebase bog'landi! (v4)");
   } else {
-    console.warn("⚠️  FIREBASE_SERVICE_ACCOUNT topilmadi! (v3)");
+    console.warn("⚠️  FIREBASE_SERVICE_ACCOUNT topilmadi! (v4)");
   }
 } catch (err) {
   console.error('Firebase init xatosi:', err.message);
