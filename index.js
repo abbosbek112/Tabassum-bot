@@ -1,23 +1,25 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
-const admin = require('firebase-admin');
 const express = require('express');
 
 // ─── Firebase Admin Init ───────────────────────────────────────────────────
-// serviceAccountKey.json faylini loyihaga qo'shing yoki
-// FIREBASE_SERVICE_ACCOUNT env var sifatida JSON string bering
-let serviceAccount;
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-} else {
-  serviceAccount = require('./serviceAccountKey.json');
+let db = null;
+
+try {
+  const admin = require('firebase-admin');
+
+  let serviceAccount;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    db = admin.firestore();
+    console.log('✅ Firebase connected!');
+  } else {
+    console.warn('⚠️  FIREBASE_SERVICE_ACCOUNT not set. Phone numbers will NOT be saved to Firestore.');
+  }
+} catch (err) {
+  console.error('Firebase init error:', err.message);
 }
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
-
-const db = admin.firestore();
 
 // ─── Bot Init ──────────────────────────────────────────────────────────────
 const BOT_TOKEN = process.env.BOT_TOKEN;
