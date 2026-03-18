@@ -227,16 +227,41 @@ app.post('/verify-code', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🌐 Express server on port ${PORT}`);
   
-  // Register webhook with Telegram after server is up
-  const webhookUrl = `${RENDER_URL}/bot${BOT_TOKEN}`;
-  bot.setWebHook(webhookUrl)
-    .then(() => console.log(`✅ Webhook set: ${webhookUrl}`))
-    .catch(err => console.error('Webhook set error:', err.message));
+  // Wait 5s after startup to let old Render instance fully shut down
+  // before registering the webhook (avoids 409 conflict)
+  setTimeout(async () => {
+    const webhookUrl = `${RENDER_URL}/bot${BOT_TOKEN}`;
+    try {
+      await bot.setWebHook(webhookUrl);
+      console.log(`✅ Webhook set: ${webhookUrl}`);
+    } catch (err) {
+      console.warn(`⚠️ Webhook set warning (will retry): ${err.message}`);
+      // Retry after 15 more seconds
+      setTimeout(async () => {
+        try {
+          await bot.setWebHook(webhookUrl);
+          console.log(`✅ Webhook set (retry): ${webhookUrl}`);
+        } catch (e) {
+          console.error(`❌ Webhook set failed: ${e.message}`);
+        }
+      }, 15000);
+    }
+  }, 5000);
 });
 
 // ─── Telegram Webhook Route ────────────────────────────────────────────────
-// Telegram sends updates to this endpoint
 app.post(`/bot${BOT_TOKEN}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
+});
+
+// ─── Manual Webhook Reset (call this URL in browser if bot stops responding) ─
+app.get('/set-webhook', async (_, res) => {
+  const webhookUrl = `${RENDER_URL}/bot${BOT_TOKEN}`;
+  try {
+    await bot.setWebHook(webhookUrl);
+    res.json({ success: true, webhook: webhookUrl });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
