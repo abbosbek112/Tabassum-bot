@@ -39,23 +39,22 @@ try {
   console.error('Firebase init xatosi:', err.message);
 }
 
-// ─── Bot Init (Webhook mode — no polling, no 409 conflict) ─────────────────
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const APP_URL   = process.env.APP_URL || 'https://tabassum-marketplace-9821c.web.app';
+// ─── Bot Init (Webhook via Express — no separate port) ─────────────────────
+const BOT_TOKEN  = process.env.BOT_TOKEN;
+const APP_URL    = process.env.APP_URL || 'https://tabassum-marketplace-9821c.web.app';
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL || 'https://tabassum-bot.onrender.com';
-const PORT      = process.env.PORT || 3000;
+const PORT       = process.env.PORT || 3000;
 
 if (!BOT_TOKEN) {
   console.error('BOT_TOKEN environment variable is required!');
   process.exit(1);
 }
 
-// Use webhook mode — NOT polling (avoids 409 conflicts)
-const bot = new TelegramBot(BOT_TOKEN, { webHook: { port: PORT } });
-bot.setWebHook(`${RENDER_URL}/bot${BOT_TOKEN}`);
+// Create bot WITHOUT polling and WITHOUT its own server
+// We'll handle the webhook via Express
+const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 
-console.log('🤖 Tabassum Bot v4 (webhook) started...');
-console.log(`🔗 Webhook: ${RENDER_URL}/bot${BOT_TOKEN}`);
+console.log('🤖 Tabassum Bot v5 (webhook via Express) started...');
 
 // ─── OTP Storage (in-memory + Firestore) ──────────────────────────────────
 // { telegramId: { code, expiresAt } }
@@ -225,4 +224,19 @@ app.post('/verify-code', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🌐 Health check server on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🌐 Express server on port ${PORT}`);
+  
+  // Register webhook with Telegram after server is up
+  const webhookUrl = `${RENDER_URL}/bot${BOT_TOKEN}`;
+  bot.setWebHook(webhookUrl)
+    .then(() => console.log(`✅ Webhook set: ${webhookUrl}`))
+    .catch(err => console.error('Webhook set error:', err.message));
+});
+
+// ─── Telegram Webhook Route ────────────────────────────────────────────────
+// Telegram sends updates to this endpoint
+app.post(`/bot${BOT_TOKEN}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
