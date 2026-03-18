@@ -1,17 +1,17 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
+const admin = require('firebase-admin');
 
 // ─── Firebase Admin Init ───────────────────────────────────────────────────
 let db = null;
 
 try {
-  const admin = require('firebase-admin');
-
-  let serviceAccount;
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
     db = admin.firestore();
     console.log('✅ Firebase connected!');
   } else {
@@ -81,16 +81,19 @@ bot.on('contact', async (msg) => {
 
   try {
     // Firestore-ga saqlash
-    await db.collection('telegram_users').doc(telegramId).set({
-      telegramId,
-      phone,
-      firstName,
-      lastName,
-      username: msg.from?.username || null,
-      linkedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-
-    console.log(`✅ Phone saved: ${phone} for Telegram ID: ${telegramId}`);
+    if (db) {
+      await db.collection('telegram_users').doc(telegramId).set({
+        telegramId,
+        phone,
+        firstName,
+        lastName,
+        username: msg.from?.username || null,
+        linkedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      console.log(`✅ Phone saved: ${phone} for Telegram ID: ${telegramId}`);
+    } else {
+      console.warn('⚠️ db is null, phone not saved');
+    }
 
     // Klaviaturani olib tashlash
     await bot.sendMessage(
@@ -99,7 +102,6 @@ bot.on('contact', async (msg) => {
       'Endi quyidagi tugmani bosib Tabassum Marketplacega kiring va ro\'yxatdan o\'ting 👇',
       {
         reply_markup: {
-          keyboard: [[ { text: '🗑 Bekor' } ]], // clear keyboard on next
           remove_keyboard: true,
         },
       }
