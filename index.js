@@ -7,18 +7,25 @@ const admin = require('firebase-admin');
 let db = null;
 
 try {
+  console.log('Environment check:', {
+    hasBotToken: !!process.env.BOT_TOKEN,
+    hasAppUrl: !!process.env.APP_URL,
+    hasServiceAccount: !!process.env.FIREBASE_SERVICE_ACCOUNT,
+    serviceAccountLength: process.env.FIREBASE_SERVICE_ACCOUNT?.length || 0
+  });
+
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
     db = admin.firestore();
-    console.log('✅ Firebase connected!');
+    console.log('✅ Firebase bog\'landi! (v2)');
   } else {
-    console.warn('⚠️  FIREBASE_SERVICE_ACCOUNT not set. Phone numbers will NOT be saved to Firestore.');
+    console.warn('⚠️  FIREBASE_SERVICE_ACCOUNT topilmadi! (v2)');
   }
 } catch (err) {
-  console.error('Firebase init error:', err.message);
+  console.error('Firebase init xatosi:', err.message);
 }
 
 // ─── Bot Init ──────────────────────────────────────────────────────────────
