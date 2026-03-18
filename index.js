@@ -1,6 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
+const cors = require('cors');
 const admin = require('firebase-admin');
 
 // ─── Firebase Admin Init ───────────────────────────────────────────────────
@@ -86,6 +87,7 @@ bot.onText(/\/start/, async (msg) => {
 
 // ─── Express Server ────────────────────────────────────────────────────────
 const app = express();
+app.use(cors()); // Allow all origins (Flutter web app on Firebase Hosting)
 app.use(express.json());
 
 app.get('/', (_, res) => res.json({ status: 'ok', bot: 'Tabassum Bot v3 running' }));
