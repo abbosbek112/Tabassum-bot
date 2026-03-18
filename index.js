@@ -65,7 +65,7 @@ function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// ─── /start command ────────────────────────────────────────────────────────
+// ─── /start command — Ask for phone number first ──────────────────────────
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const firstName = msg.from?.first_name || 'Foydalanuvchi';
@@ -74,12 +74,54 @@ bot.onText(/\/start/, async (msg) => {
     chatId,
     `Assalomu alaykum, ${firstName}! 👋\n\n` +
     `Tabassum Marketplacega xush kelibsiz! 🛍️\n\n` +
-    `Ro'yxatdan o'tish uchun quyidagi tugmani bosing 👇`,
+    `Avval telefon raqamingizni ulashing 👇`,
+    {
+      reply_markup: {
+        keyboard: [
+          [{ text: '📱 Telefon raqamimni ulashish', request_contact: true }]
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+      }
+    }
+  );
+});
+
+// ─── Contact handler — Save phone & show app button ───────────────────────
+bot.on('contact', async (msg) => {
+  const chatId = msg.chat.id;
+  const contact = msg.contact;
+  const telegramId = String(msg.from.id);
+  const phone = contact.phone_number;
+
+  // Save to Firestore
+  if (db) {
+    try {
+      await db.collection('telegram_users').doc(telegramId).set({
+        telegramId,
+        phone,
+        firstName: contact.first_name || '',
+        lastName: contact.last_name || '',
+        username: msg.from?.username || '',
+        linkedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      console.log(`✅ Phone saved: ${telegramId} → ${phone}`);
+    } catch (err) {
+      console.error('Firestore save error:', err.message);
+    }
+  }
+
+  // Send success message + app button
+  await bot.sendMessage(
+    chatId,
+    `✅ Raqamingiz saqlandi: ${phone}\n\n` +
+    `Endi ilovaga o'ting va ro'yxatdan o'ting 👇`,
     {
       reply_markup: {
         inline_keyboard: [
           [{ text: '🚀 Tabassum ni ochish', web_app: { url: APP_URL } }]
-        ]
+        ],
+        remove_keyboard: true,
       }
     }
   );
