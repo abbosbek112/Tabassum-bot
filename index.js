@@ -60,27 +60,78 @@ console.log('🤖 Tabassum Bot v5 (webhook via Express) started...');
 // ─── Direct Telegram Auth Server ──────────────────────────────────────────
 
 // ─── /start command — Ask for phone number first ──────────────────────────
-bot.onText(/\/start/, async (msg) => {
+bot.onText(/\/start(.*)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const firstName = msg.from?.first_name || 'Foydalanuvchi';
+  const telegramId = String(msg.from.id);
+  const startParam = match[1] ? match[1].trim() : '';
 
-  await bot.sendMessage(
-    chatId,
-    `Assalomu alaykum, *${firstName}*! 👋\n\n` +
-    `🛍️ *Tabassum Marketplace* — onlayn xaridlar platformasiga xush kelibsiz!\n\n` +
-    `Davom etish va profilingizni xavfsiz himoyalash uchun, iltimos,\n` +
-    `👇 **Telefon raqamingizni ulang**:`,
-    {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        keyboard: [
-          [{ text: '📱 Telefon raqamimni ulashish', request_contact: true }]
-        ],
-        resize_keyboard: true,
-        one_time_keyboard: true,
+  let phoneExists = false;
+  let savedPhone = '';
+
+  if (db) {
+    try {
+      const doc = await db.collection('telegram_users').doc(telegramId).get();
+      if (doc.exists && doc.data().phone) {
+        phoneExists = true;
+        savedPhone = doc.data().phone;
       }
+    } catch (e) {
+      console.error(e);
     }
-  );
+  }
+
+  // Telegram allows passing startapp via start param if simple deep link is used, 
+  // or it will just be added by Telegram UI. We provide it dynamically.
+  // We'll leave the url as APP_URL; Telegram appends tgWebAppStartParam automatically
+  // but if we need a specific link, we can just use APP_URL.
+
+  if (phoneExists) {
+    await bot.sendMessage(
+      chatId,
+      `Assalomu alaykum yana bir bor, *${firstName}*! 👋\n\n` +
+      `Sizning raqamingiz (\`${savedPhone}\`) tizimda muvaffaqiyatli saqlangan.\n\n` +
+      `👇 Pastdagi tugmani bosib **Tabassum Marketplace** ga kiring!`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🚀 Tabassum ni ochish', web_app: { url: APP_URL } }]
+          ]
+        }
+      }
+    );
+    await bot.sendMessage(
+      chatId,
+      `Boshqa raqam kiritish kerak bo'lsa, pastdagi tugmani bosing:`,
+      {
+        reply_markup: {
+          keyboard: [
+            [{ text: '🔄 Raqamni almashtirish', request_contact: true }]
+          ],
+          resize_keyboard: true,
+        }
+      }
+    );
+  } else {
+    await bot.sendMessage(
+      chatId,
+      `Assalomu alaykum, *${firstName}*! 👋\n\n` +
+      `🛍️ *Tabassum Marketplace* — onlayn xaridlar platformasiga xush kelibsiz!\n\n` +
+      `Davom etish va profilingizni xavfsiz himoyalash uchun, iltimos,\n` +
+      `👇 **Telefon raqamingizni ulang**:`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          keyboard: [
+            [{ text: '📱 Telefon raqamimni ulashish', request_contact: true }]
+          ],
+          resize_keyboard: true,
+          one_time_keyboard: true,
+        }
+      }
+    );
+  }
 });
 
 // ─── Contact handler — Save phone & show app button ───────────────────────
@@ -101,7 +152,14 @@ bot.on('contact', async (msg) => {
         username: msg.from?.username || '',
         linkedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
-      console.log(`✅ Phone saved: ${telegramId} → ${phone}`);
+      
+      const uid = `tg_${telegramId}`;
+      const userDoc = await db.collection('users').doc(uid).get();
+      if (userDoc.exists) {
+        await db.collection('users').doc(uid).update({ phoneNumber: phone });
+      }
+
+      console.log(`✅ Phone saved and synced: ${telegramId} → ${phone}`);
     } catch (err) {
       console.error('Firestore save error:', err.message);
     }
@@ -118,8 +176,20 @@ bot.on('contact', async (msg) => {
       reply_markup: {
         inline_keyboard: [
           [{ text: '🚀 Tabassum ni ochish', web_app: { url: APP_URL } }]
+        ]
+      }
+    }
+  );
+
+  await bot.sendMessage(
+    chatId,
+    `Kerak bo'lganda raqamingizni almashtirishingiz mumkin:`,
+    {
+      reply_markup: {
+        keyboard: [
+          [{ text: '🔄 Raqamni almashtirish', request_contact: true }]
         ],
-        remove_keyboard: true,
+        resize_keyboard: true,
       }
     }
   );
