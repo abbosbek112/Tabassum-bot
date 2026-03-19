@@ -66,10 +66,12 @@ bot.onText(/\/start/, async (msg) => {
 
   await bot.sendMessage(
     chatId,
-    `Assalomu alaykum, ${firstName}! 👋\n\n` +
-    `Tabassum Marketplacega xush kelibsiz! 🛍️\n\n` +
-    `Avval telefon raqamingizni ulashing 👇`,
+    `Assalomu alaykum, *${firstName}*! 👋\n\n` +
+    `🛍️ *Tabassum Marketplace* — onlayn xaridlar platformasiga xush kelibsiz!\n\n` +
+    `Davom etish va profilingizni xavfsiz himoyalash uchun, iltimos,\n` +
+    `👇 **Telefon raqamingizni ulang**:`,
     {
+      parse_mode: 'Markdown',
       reply_markup: {
         keyboard: [
           [{ text: '📱 Telefon raqamimni ulashish', request_contact: true }]
@@ -108,9 +110,11 @@ bot.on('contact', async (msg) => {
   // Send success message + app button
   await bot.sendMessage(
     chatId,
-    `✅ Raqamingiz saqlandi: ${phone}\n\n` +
-    `Endi ilovaga o'ting va ro'yxatdan o'ting 👇`,
+    `✅ *Ajoyib! Raqamingiz muvaffaqiyatli saqlandi:*\n\`${phone}\`\n\n` +
+    `Endi platformamizdan to'liq foydalanishingiz mumkin.\n` +
+    `👇 Pastdagi tugmani bosib **Tabassum** ilovasiga kiring!`,
     {
+      parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
           [{ text: '🚀 Tabassum ni ochish', web_app: { url: APP_URL } }]
