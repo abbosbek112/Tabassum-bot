@@ -3,6 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
+const crypto = require('crypto');
 
 // ─── Firebase Admin Init ───────────────────────────────────────────────────
 let db = null;
@@ -197,18 +198,66 @@ bot.on('contact', async (msg) => {
 
 // ─── Express Server ────────────────────────────────────────────────────────
 const app = express();
-app.use(cors()); // Allow all origins (Flutter web app on Firebase Hosting)
+
+// Restrict CORS to specific frontend apps
+const allowedOrigins = [
+  'https://tabassum-marketplace-9821c.web.app',
+  'https://tabassum-marketplace-9821c.firebaseapp.com'
+];
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+}));
+
 app.use(express.json());
+
+// ─── Telegram WebApp Validation ─────────────────────────────────────────────
+function validateTelegramData(initData, botToken) {
+  if (!initData) return false;
+  try {
+    const urlParams = new URLSearchParams(initData);
+    const hash = urlParams.get('hash');
+    if (!hash) return false;
+    
+    urlParams.delete('hash');
+    
+    // Sort keys alphabetically
+    const keys = Array.from(urlParams.keys()).sort();
+    const dataCheckString = keys.map(key => `${key}=${urlParams.get(key)}`).join('\n');
+    
+    // Create secret key
+    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+    
+    // Calculate hash
+    const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+    
+    return calculatedHash === hash;
+  } catch (err) {
+    console.error('Validation error:', err);
+    return false;
+  }
+}
 
 app.get('/', (_, res) => res.json({ status: 'ok', bot: 'Tabassum Bot v3 running' }));
 
 // ─── POST /telegram-login ───────────────────────────────────────────────────
-// Body: { telegramId: string }
+// Body: { telegramId: string, initData: string }
 app.post('/telegram-login', async (req, res) => {
-  const { telegramId } = req.body;
+  const { telegramId, initData } = req.body;
   
-  if (!telegramId) {
-    return res.status(400).json({ success: false, error: 'telegramId required' });
+  if (!telegramId || !initData) {
+    return res.status(400).json({ success: false, error: 'telegramId and initData required' });
+  }
+
+  // Validate signature
+  if (!validateTelegramData(initData, BOT_TOKEN)) {
+    console.warn(`🚨 Invalid signature attempt for: ${telegramId}`);
+    return res.status(403).json({ success: false, error: 'Invalid Telegram data signature' });
   }
 
   if (!db) {
@@ -239,12 +288,18 @@ app.post('/telegram-login', async (req, res) => {
 });
 
 // ─── POST /telegram-register ────────────────────────────────────────────────
-// Body: { telegramId: string, name: string, surname?: string, age: number }
+// Body: { telegramId: string, initData: string, name: string, surname?: string, age: number }
 app.post('/telegram-register', async (req, res) => {
-  const { telegramId, name, surname, age } = req.body;
+  const { telegramId, initData, name, surname, age } = req.body;
 
-  if (!telegramId || !name || !age) {
-    return res.status(400).json({ success: false, error: 'telegramId, name, age required' });
+  if (!telegramId || !initData || !name || !age) {
+    return res.status(400).json({ success: false, error: 'telegramId, initData, name, age required' });
+  }
+
+  // Validate signature
+  if (!validateTelegramData(initData, BOT_TOKEN)) {
+    console.warn(`🚨 Invalid signature attempt for: ${telegramId}`);
+    return res.status(403).json({ success: false, error: 'Invalid Telegram data signature' });
   }
 
   if (!db) {
