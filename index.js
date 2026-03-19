@@ -202,7 +202,9 @@ const app = express();
 // Restrict CORS to specific frontend apps
 const allowedOrigins = [
   'https://tabassum-marketplace-9821c.web.app',
-  'https://tabassum-marketplace-9821c.firebaseapp.com'
+  'https://tabassum-marketplace-9821c.firebaseapp.com',
+  'https://tabassum.app',
+  'https://tabssum.app'
 ];
 app.use(cors({
   origin: function (origin, callback) {
