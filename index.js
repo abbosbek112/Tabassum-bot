@@ -209,6 +209,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.warn('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   }
@@ -220,23 +221,32 @@ app.use(express.json());
 function validateTelegramData(initData, botToken) {
   if (!initData) return false;
   try {
-    const urlParams = new URLSearchParams(initData);
-    const hash = urlParams.get('hash');
-    if (!hash) return false;
+    const params = initData.split('&');
+    const hashParam = params.find(p => p.startsWith('hash='));
+    if (!hashParam) {
+      console.warn('Validation error: no hash param');
+      return false;
+    }
+    const hash = hashParam.split('=')[1];
     
-    urlParams.delete('hash');
+    const dataCheckString = params
+      .filter(p => !p.startsWith('hash='))
+      .map(p => {
+        const [k, ...v] = p.split('=');
+        // Decode URI component correctly as per Telegram docs
+        return `${k}=${decodeURIComponent(v.join('='))}`;
+      })
+      .sort()
+      .join('\n');
     
-    // Sort keys alphabetically
-    const keys = Array.from(urlParams.keys()).sort();
-    const dataCheckString = keys.map(key => `${key}=${urlParams.get(key)}`).join('\n');
-    
-    // Create secret key
     const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
-    
-    // Calculate hash
     const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
     
-    return calculatedHash === hash;
+    if (calculatedHash !== hash) {
+      console.warn('Validation error: hash mismatch. calculated:', calculatedHash, 'expected:', hash);
+      return false;
+    }
+    return true;
   } catch (err) {
     console.error('Validation error:', err);
     return false;
