@@ -260,12 +260,12 @@ app.get('/', (_, res) => res.json({ status: 'ok', bot: 'Tabassum Bot v3 running'
 app.post('/telegram-login', async (req, res) => {
   const { telegramId, initData } = req.body;
   
-  if (!telegramId || !initData) {
-    return res.status(400).json({ success: false, error: 'telegramId and initData required' });
+  if (!telegramId) {
+    return res.status(400).json({ success: false, error: 'telegramId required' });
   }
 
-  // Validate signature
-  if (!validateTelegramData(initData, BOT_TOKEN)) {
+  // Validate signature only when initData is provided
+  if (initData && !validateTelegramData(initData, BOT_TOKEN)) {
     console.warn(`🚨 Invalid signature attempt for: ${telegramId}`);
     return res.status(403).json({ success: false, error: 'Invalid Telegram data signature' });
   }
@@ -302,12 +302,12 @@ app.post('/telegram-login', async (req, res) => {
 app.post('/telegram-register', async (req, res) => {
   const { telegramId, initData, name, surname, age } = req.body;
 
-  if (!telegramId || !initData || !name || !age) {
-    return res.status(400).json({ success: false, error: 'telegramId, initData, name, age required' });
+  if (!telegramId || !name || !age) {
+    return res.status(400).json({ success: false, error: 'telegramId, name, age required' });
   }
 
-  // Validate signature
-  if (!validateTelegramData(initData, BOT_TOKEN)) {
+  // Validate signature only when initData is provided
+  if (initData && !validateTelegramData(initData, BOT_TOKEN)) {
     console.warn(`🚨 Invalid signature attempt for: ${telegramId}`);
     return res.status(403).json({ success: false, error: 'Invalid Telegram data signature' });
   }
