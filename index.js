@@ -57,13 +57,7 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 
 console.log('🤖 Tabassum Bot v5 (webhook via Express) started...');
 
-// ─── OTP Storage (in-memory + Firestore) ──────────────────────────────────
-// { telegramId: { code, expiresAt } }
-const otpStore = {};
-
-function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
+// ─── Direct Telegram Auth Server ──────────────────────────────────────────
 
 // ─── /start command — Ask for phone number first ──────────────────────────
 bot.onText(/\/start/, async (msg) => {
@@ -134,93 +128,13 @@ app.use(express.json());
 
 app.get('/', (_, res) => res.json({ status: 'ok', bot: 'Tabassum Bot v3 running' }));
 
-// ─── POST /send-code ───────────────────────────────────────────────────────
+// ─── POST /telegram-login ───────────────────────────────────────────────────
 // Body: { telegramId: string }
-// Generates a 6-digit OTP, saves it, sends via bot
-app.post('/send-code', async (req, res) => {
+app.post('/telegram-login', async (req, res) => {
   const { telegramId } = req.body;
-
+  
   if (!telegramId) {
     return res.status(400).json({ success: false, error: 'telegramId required' });
-  }
-
-  try {
-    const code = generateOtp();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
-
-    // Save OTP in memory
-    otpStore[telegramId] = { code, expiresAt };
-
-    // Also save to Firestore for persistence (optional)
-    if (db) {
-      await db.collection('otp_codes').doc(String(telegramId)).set({
-        code,
-        expiresAt,
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-    }
-
-    // Send code via Telegram bot
-    await bot.sendMessage(
-      telegramId,
-      `🔐 *Tabassum — Tasdiqlash kodi*\n\n` +
-      `Sizning kodingiz: *${code}*\n\n` +
-      `⏱️ Kod 5 daqiqa davomida amal qiladi.\n` +
-      `Bu kodni hech kimga bermang!`,
-      { parse_mode: 'Markdown' }
-    );
-
-    console.log(`✅ OTP sent to telegramId: ${telegramId}`);
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error('Send code error:', err.message);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ─── POST /verify-code ──────────────────────────────────────────────────────
-// Body: { telegramId: string, code: string, name: string, surname?: string, age: number, phone?: string }
-// Verifies OTP, creates Firebase user, returns custom token
-app.post('/verify-code', async (req, res) => {
-  const { telegramId, code, name, surname, age, phone } = req.body;
-
-  if (!telegramId || !code || !name || !age) {
-    return res.status(400).json({ success: false, error: 'telegramId, code, name, age required' });
-  }
-
-  // Check OTP in memory first, then Firestore
-  let stored = otpStore[telegramId];
-
-  if (!stored && db) {
-    try {
-      const doc = await db.collection('otp_codes').doc(String(telegramId)).get();
-      if (doc.exists) {
-        const data = doc.data();
-        stored = { code: data.code, expiresAt: data.expiresAt };
-      }
-    } catch (e) {
-      console.error('Firestore OTP fetch error:', e.message);
-    }
-  }
-
-  if (!stored) {
-    return res.status(400).json({ success: false, error: 'Kod topilmadi. /send-code ni qayta chaqiring.' });
-  }
-
-  if (Date.now() > stored.expiresAt) {
-    delete otpStore[telegramId];
-    return res.status(400).json({ success: false, error: 'Kod muddati tugagan. Qayta yuborilsin.' });
-  }
-
-  if (stored.code !== code) {
-    return res.status(400).json({ success: false, error: 'Noto\'g\'ri kod. Qayta urinib ko\'ring.' });
-  }
-
-  // Code is correct — clear it
-  delete otpStore[telegramId];
-  if (db) {
-    db.collection('otp_codes').doc(String(telegramId)).delete().catch(() => {});
   }
 
   if (!db) {
@@ -228,19 +142,52 @@ app.post('/verify-code', async (req, res) => {
   }
 
   try {
-    // Get phone from telegram_users if available
-    let userPhone = phone || '';
-    if (!userPhone) {
-      const telDoc = await db.collection('telegram_users').doc(String(telegramId)).get();
-      if (telDoc.exists) {
-        userPhone = telDoc.data()?.phone || '';
-      }
+    const uid = `tg_${telegramId}`;
+    const userDoc = await db.collection('users').doc(uid).get();
+    
+    if (userDoc.exists) {
+      // User already exists, log them in!
+      const customToken = await admin.auth().createCustomToken(uid, {
+        telegramId: String(telegramId),
+        role: userDoc.data()?.role || 'customer',
+      });
+      console.log(`✅ Direct login for: ${uid}`);
+      return res.json({ success: true, token: customToken, uid, needs_registration: false });
+    } else {
+      // User needs to register (provide Name, Surname, Age)
+      console.log(`ℹ️ Needs registration: ${telegramId}`);
+      return res.json({ success: true, needs_registration: true });
+    }
+  } catch (err) {
+    console.error('Telegram login error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── POST /telegram-register ────────────────────────────────────────────────
+// Body: { telegramId: string, name: string, surname?: string, age: number }
+app.post('/telegram-register', async (req, res) => {
+  const { telegramId, name, surname, age } = req.body;
+
+  if (!telegramId || !name || !age) {
+    return res.status(400).json({ success: false, error: 'telegramId, name, age required' });
+  }
+
+  if (!db) {
+    return res.status(500).json({ success: false, error: 'Firebase not initialized' });
+  }
+
+  try {
+    // 1. Fetch phone number from telegram_users
+    let userPhone = '';
+    const telDoc = await db.collection('telegram_users').doc(String(telegramId)).get();
+    if (telDoc.exists) {
+      userPhone = telDoc.data()?.phone || '';
     }
 
-    // Use telegramId as the Firebase UID (prefixed)
     const uid = `tg_${telegramId}`;
 
-    // Create or update user profile in Firestore
+    // 2. Create user document
     await db.collection('users').doc(uid).set({
       uid,
       telegramId: String(telegramId),
@@ -253,17 +200,17 @@ app.post('/verify-code', async (req, res) => {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    // Create Firebase Custom Token
+    // 3. Create Custom Token
     const customToken = await admin.auth().createCustomToken(uid, {
       telegramId: String(telegramId),
       role: 'customer',
     });
 
-    console.log(`✅ Auth verified for telegramId: ${telegramId}, uid: ${uid}`);
+    console.log(`✅ Registration complete for: ${uid}`);
     res.json({ success: true, token: customToken, uid });
 
   } catch (err) {
-    console.error('Verify code error:', err.message);
+    console.error('Telegram register error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
